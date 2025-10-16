@@ -55,4 +55,9 @@
 			"action": "submit"
 		}
 	},
+	{
+    "caption": "FastOlympicCoding: Run All Tests",
+    "command": "test_manager",
+    "args": {"action": "run_all_tests"}
+	}
 ]
