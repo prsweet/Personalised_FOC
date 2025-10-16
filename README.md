@@ -60,3 +60,18 @@ Fast Olympic Coding plugin for Sublime Text 3
  * to select a stack frame (type `FastOlympicCoding: Select Frame` in the command palette)
  * the only one dependency is xcode (you can install it with `xcode-select --install`)
 
+This is the commands file:
+
+{
+    // ... your other settings ...
+
+    // --- Competitive Companion Settings ---
+    "companion_listener_enabled": true,
+    "companion_listener_port": 10043,
+
+    // Use the template file directly from the package
+    "cpp_template_path": "Packages/CppFastOlympicCoding/my_template.cpp", 
+
+    // The extension for newly created files (e.g., "cpp", "py")
+    "default_language_extension": "cpp"
+}
