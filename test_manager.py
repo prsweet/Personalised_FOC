@@ -51,6 +51,8 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		self.phantoms = PhantomSet(view, 'test-phantoms')
 		self.test_phantoms = [PhantomSet(view, 'test-phantoms-' + str(i)) for i in range(20)]
 		self.out_region_set = False
+		self.is_running_all = False
+		self.run_all_index = 0
 
 	class Test(object):
 		def __init__(self, prop, start=None, end=None):
@@ -66,7 +68,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 
 			self.start = start
 			self.fold = True
-			self.shrunk = True 
+			self.shrunk = bool(self.correct_answers) # Shrink on load if it has a known answer
 			self.end = end
 			self.runtime = '-'
 			self.rtcode = None 
@@ -367,67 +369,6 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		def terminate(self):
 			self.process_manager.terminate()
 
-	def insert_text(self, edit, text=None):
-		v = self.view
-		expected = v.line(self.delta_input).end()
-		if len(v.sel()) > 1: return
-		if v.sel()[0].a != expected or v.sel()[0].b != expected: return
-		if text is None:
-			if not self.tester.proc_run:
-				return None
-			to_shove = v.substr(Region(self.delta_input, v.sel()[0].b))
-			v.insert(edit, v.sel()[0].b, '\n')
-		else:
-			to_shove = text
-			v.insert(edit, v.sel()[0].b, to_shove + '\n')
-		self.delta_input = v.sel()[0].b 
-		self.tester.insert(to_shove + '\n')
-
-	def insert_cb(self, edit):
-		v = self.view
-		s = sublime.get_clipboard()
-		lst = s.split('\n')
-		for i in range(len(lst) - 1):
-			self.tester.insert(lst[i] + '\n', call_on_insert=True)
-		self.tester.insert(lst[-1], call_on_insert=True)
-
-	def toggle_fold(self, i):
-		v = self.view
-		tester = self.tester
-
-		_inp = self.tester.tests[i].test_string
-		_outp = self.tester.prog_out[i]
-		text = _inp + '\n' + _outp.rstrip() + '\n' + '\n'
-		tie_pos = self.get_tie_pos(i)
-
-		if tester.tests[i].fold:
-			v.run_command('test_manager', {
-				'action': 'replace',
-				'region': (tie_pos + 1, tie_pos + 1),
-				'text': text
-			})
-
-			d = len(text)
-			for j in range(i + 1, tester.test_iter):
-				self.tester.tests[j].tie_pos += d
-
-			tester.tests[i].fold = False
-		else:
-			v.run_command('test_manager', {
-				'action': 'replace',
-				'region': (tie_pos + 1, tie_pos + 1 + len(text)),
-				'text': ''
-			})
-
-			d = len(text)
-			for j in range(i + 1, tester.test_iter):
-				tester.tests[j].tie_pos -= d
-
-			tester.tests[i].fold = True
-		v.sel().clear()
-		v.sel().add(Region(v.size()))
-		self.update_configs()
-
 	def open_test_edit(self, i):
 		v = self.view
 		tester = self.tester
@@ -441,22 +382,6 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 			'source_view_id': v.id()
 		})
 
-	def get_tie_pos(self, i):
-		v = self.view
-		tester = self.tester
-		pt = 0
-		for j in range(i):
-			running = tester.proc_run and j == tester.running_test
-
-			if running:
-				pt += len(tester.tests[j].test_string) + len(tester.prog_out[j]) + 2
-			elif not tester.tests[j].fold:
-				pt += len(tester.tests[j].test_string) + len(tester.prog_out[j]) + 1
-				if not running and str(tester.tests[j].rtcode) == '0' and tester.prog_out[j]:
-					pt += 2
-
-		return pt
-
 	def on_test_action(self, i, event):
 		v = self.view
 		tester = self.tester
@@ -467,10 +392,12 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 			if is_passed:
 				tester.tests[i].shrunk = not tester.tests[i].shrunk
 			
-			self.toggle_fold(i)
+			tester.tests[i].fold = not tester.tests[i].fold
+			self.rebuild_view_content()
+			self.update_configs()
 			return
 		
-		if tester.proc_run and event in {'test-edit', 'test-run'}:
+		if (tester.proc_run or self.is_running_all) and event in {'test-edit', 'test-run'}:
 			sublime.status_message('can not {action} while process running'.format(action=event))
 			return
 
@@ -479,25 +406,24 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		elif event == 'test-stop':
 			tester.terminate()
 		elif event == 'test-run':
-			if not tester.tests[i].fold:
-				self.toggle_fold(i)
-			tie_pos = self.get_tie_pos(i)
-			v.run_command('test_manager', {
-				'action': 'replace',
-				'region': (tie_pos, tie_pos),
-				'text': '\n\n'
-			})
-			v.add_regions('type', \
-				[Region(tie_pos + 1)], *self.REGION_BEGIN_PROP)
+			self.run_single_test(i)
 
-			self.input_start = tie_pos + 1
-			self.delta_input = tie_pos + 1
+	def run_single_test(self, i):
+		tester = self.tester
+		if not tester.tests[i].fold:
+			tester.tests[i].fold = True
+		
+		self.rebuild_view_content(running_test_id=i)
+		self.update_configs()
+		
+		self.input_start = self.tester.tests[i].tie_pos + 1
+		self.delta_input = self.input_start
 
-			v.sel().clear()
-			v.sel().add(Region(tie_pos + 1))
-
-			self.prepare_code_view()
-			tester.run_test(i)
+		self.view.add_regions('type', [Region(self.input_start)], *self.REGION_BEGIN_PROP)
+		self.view.sel().clear()
+		self.view.sel().add(Region(self.input_start))
+		self.prepare_code_view()
+		tester.run_test(i)
 
 	def on_accdec_action(self, i, event):
 		v = self.view
@@ -510,36 +436,62 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		self.memorize_tests()
 
 	def set_test_input(self, test=None, id=None):
-		v = self.view
-		tester = self.tester
-		unfold = False
-		if not tester.tests[id].fold:
-			self.toggle_fold(id)
-			unfold = True
-
-		tester.tests[id].test_string = test
-
-		if unfold:
-			self.toggle_fold(id)
-
+		self.tester.tests[id].test_string = test
+		self.rebuild_view_content()
+		self.update_configs()
 		self.memorize_tests()
 
 	def get_next_title(self):
 		v = self.view
 		styles = get_test_styles(v) 
 		content = open(root_dir + '/Highlight/test_next.html').read()
-
 		content = '<style>' + styles + '</style>' + content
 
 		def onclick(event, v=v):
-			v.run_command('test_manager', {
-				'action': 'new_test'
-			})	
+			if event == 'run-all-tests':
+				v.run_command('test_manager', {'action': 'run_all_tests'})
+			else:
+				v.run_command('test_manager', {'action': 'new_test'})
 
-		phantom = Phantom(Region(self.view.size() - 1), content, sublime.LAYOUT_BLOCK, onclick)
-		return phantom
+		phantom_content = content
+		if get_settings().get('run_all_button_enabled', True):
+			run_all_content = open(root_dir + '/Highlight/test_run_all.html').read()
+			phantom_content += '<style>' + styles + '</style>' + run_all_content
+		
+		return Phantom(Region(self.view.size() - 1), phantom_content, sublime.LAYOUT_BLOCK, onclick)
 
-	def update_configs(self, update_last=None):
+	def rebuild_view_content(self, running_test_id=None):
+		v = self.view
+		tester = self.tester
+		
+		full_text = ''
+		current_pos = 0
+		
+		for i in range(len(tester.tests)):
+			tester.tests[i].set_tie_pos(current_pos)
+			
+			full_text += '\n'
+			current_pos += 1
+			
+			if running_test_id == i:
+				full_text += '\n\n'
+				current_pos += 2
+			elif not tester.tests[i].fold:
+				is_passed = tester.tests[i].is_correct_answer(tester.prog_out[i]) and str(tester.tests[i].rtcode) == '0'
+				if not (is_passed and tester.tests[i].shrunk):
+					_inp = tester.tests[i].test_string
+					_out = tester.prog_out[i]
+					text = _inp + '\n' + _out.rstrip() + '\n\n'
+					full_text += text
+					current_pos += len(text)
+		
+		v.run_command('test_manager', {
+			'action': 'replace',
+			'region': (0, v.size()),
+			'text': full_text
+		})
+
+	def update_configs(self):
 		v = self.view
 		tester = self.tester
 		
@@ -548,46 +500,30 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		configs = []
 		if not tester: return
 		
-		if tester.proc_run:
-			k = tester.test_iter + 1
-		else:
-			k = tester.test_iter
-		k = min(k, len(tester.tests))
+		k = len(tester.tests)
 		
-		pt = 0
-		_last_test_entry = -1
 		for i in range(k):
-			running = tester.proc_run and i == tester.running_test
+			running = (tester.proc_run or self.is_running_all) and i == tester.running_test
 			is_passed = tester.tests[i].is_correct_answer(tester.prog_out[i]) and str(tester.tests[i].rtcode) == '0'
+			
+			pt = tester.tests[i].tie_pos
 
 			config = tester.tests[i].get_config(
 				i, pt, self.on_test_action, tester.prog_out[i], self.view, running=running
 			)
-			_last_test_entry = len(configs)
 			configs.append(config)
 			
-			if is_passed and tester.tests[i].shrunk:
-				pt += 1
-			else:
-				if running:
-					pt += len(tester.tests[i].test_string) + len(tester.prog_out[i]) + 2
-				elif not tester.tests[i].fold:
-					pt += len(tester.tests[i].test_string) + len(tester.prog_out[i]) + 1
-
-				if not running and not tester.tests[i].fold and str(tester.tests[i].rtcode) == '0' and tester.prog_out[i]:
+			if not running and not tester.tests[i].fold and not (is_passed and tester.tests[i].shrunk):
+				if str(tester.tests[i].rtcode) == '0' and tester.prog_out[i]:
+					accdec_pt = pt + len(tester.tests[i].test_string) + len(tester.prog_out[i].rstrip()) + 2
 					if tester.tests[i].is_correct_answer(tester.prog_out[i]):
 						type = 'decline'
 					else:
 						type = 'accept'
-					accdec = tester.tests[i].get_accdec(
-						i, pt, self.on_accdec_action, type, self.view
-					)
+					accdec = tester.tests[i].get_accdec(i, accdec_pt, self.on_accdec_action, type, self.view)
 					configs.append(accdec)
 
-				if not tester.tests[i].fold:
-					pt += 2
-
-		if not tester.proc_run:
+		if not tester.proc_run and not self.is_running_all:
 			configs.append(self.get_next_title())
 
 		while len(self.test_phantoms) < len(configs):
@@ -599,22 +535,19 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		for i in range(len(configs), len(self.test_phantoms)):
 			self.test_phantoms[i].update([])
 
-
 	def new_test(self, edit):
 		v = self.view
+		self.rebuild_view_content() 
+		self.update_configs()
 
-		self.input_start = v.size()
-		self.delta_input = v.size()
-		self.output_start = v.size() + 1
-		self.out_region_set = False
-
-		v.add_regions('type', \
-			[Region(v.size(), v.size())], *self.REGION_BEGIN_PROP)
+		tie_pos = v.size() -1
+		v.add_regions('type', [Region(tie_pos + 1)], *self.REGION_BEGIN_PROP)
+		self.input_start = tie_pos + 1
+		self.delta_input = tie_pos + 1
 
 		v.sel().clear()
-		v.sel().add(Region(v.size()))
-
-		self.tester.next_test(v.size() - 1, lambda: self.update_configs(update_last=True))
+		v.sel().add(Region(tie_pos + 1))
+		self.tester.next_test(tie_pos, lambda: self.update_configs())
 	
 	def memorize_tests(self):
 		if not hasattr(self, 'dbg_file'): return
@@ -635,67 +568,39 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		tester = self.tester
 
 		test_id = self.tester.running_test
-		_inp = self.tester.tests[test_id].test_string
-		_outp = self.tester.prog_out[test_id]
-		_outp = _outp.rstrip()
-
-		if tester.running_new:
-			_outp += '\n' + '\n'
-
 		self.tester.tests[test_id].set_cur_runtime(runtime)
 		self.tester.tests[test_id].set_cur_rtcode(rtcode)
 
 		v.erase_regions('type')
-		line = v.line(self.input_start)
-
-		input_end = v.line(Region(self.delta_input)).end()
-
 		is_passed_now = self.tester.tests[test_id].is_correct_answer(self.tester.prog_out[test_id]) and str(rtcode) == '0'
 
 		if tester.running_new and is_passed_now:
-			v.run_command('test_manager', {
-				'action': 'replace',
-				'region': (self.input_start, input_end),
-				'text': ''
-			})
 			tester.tests[test_id].fold = True
 			tester.tests[test_id].shrunk = True
 		else:
-			v.run_command('test_manager', {
-				'action': 'replace',
-				'region': (self.input_start, input_end),
-				'text': _inp + '\n' + _outp
-			})
+			tester.tests[test_id].fold = False
+			tester.tests[test_id].shrunk = False
 
-			self.tester.tests[test_id].fold = False
-			self.tester.tests[test_id].shrunk = False
-
-			v.add_regions(self.REGION_BEGIN_KEY % test_id, \
-				[Region(line.begin(), line.end())], *self.REGION_BEGIN_PROP)
-
-		v.show(self.input_start + 20)
-		rtcode = str(rtcode)
-
-		v.add_regions('test_end_%d' % test_id, \
-			[Region(self.input_start + len(_inp) + 1, self.input_start + len(_inp) + 1)], \
-				*self.REGION_END_PROP)
-
+		self.rebuild_view_content()
 		v.run_command('test_manager', {'action': 'set_cursor_to_end'})
-
-		tester = self.tester
 		self.memorize_tests()
-		if str(rtcode) == '0':
-			if tester.running_new and tester.have_pretests():
-				self.update_configs(update_last=True)
-				sublime.set_timeout(lambda: v.run_command('test_manager', {'action': 'new_test'}), 10)
+
+		if self.is_running_all:
+			self.run_all_index += 1
+			if self.run_all_index < len(tester.tests):
+				sublime.set_timeout(lambda: self.run_single_test(self.run_all_index), 10)
+			else:
+				self.is_running_all = False
+				self.update_configs()
+		else:
+			if str(rtcode) == '0':
+				if tester.running_new and tester.have_pretests():
+					sublime.set_timeout(lambda: v.run_command('test_manager', {'action': 'new_test'}), 10)
+				else:
+					sublime.set_timeout(self.update_configs, 100)
 			else:
 				sublime.set_timeout(self.update_configs, 100)
-		else:
-			sublime.set_timeout(self.update_configs, 100)
-
-		cur_test = tester.running_test
-		check = self.tester.check_test(cur_test)
-
+		
 		if crash_line is not None:
 			for x in v.window().views():
 				if x.id() == self.code_view_id:
@@ -739,7 +644,6 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 			if code_view.is_dirty():
 				code_view.run_command('save')
 
-	# --- NEWLY ADDED/RESTORED FUNCTIONS ---
 	def sync_read_only(self):
 		view = self.view
 		tester = self.tester
@@ -769,7 +673,6 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 
 	def change_process_status(self, status):
 		self.view.set_status('process_status', status)
-	# --- END OF NEWLY ADDED/RESTORED FUNCTIONS ---
 
 	def make_opd(self, edit, run_file=None, build_sys=None, clr_tests=False, \
 		sync_out=False, code_view_id=None, use_debugger=False, load_session=False):
@@ -818,7 +721,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		try:
 			if not clr_tests:
 				with open(get_tests_file_path(run_file)) as f:
-					tests = [self.Test(x) for x in sublime.decode_value(f.read()) if x['test'].strip()]
+					tests = [self.Test(x) for x in sublime.decode_value(f.read())]
 			else: raise FileNotFoundError
 		except (FileNotFoundError, ValueError):
 			if clr_tests:
@@ -846,6 +749,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 				)
 				v.settings().set('edit_mode', False)
 				self.tester.test_iter = len(tests)
+				self.rebuild_view_content()
 				self.update_configs()
 			else:
 				v.run_command('test_manager', {'action': 'insert_opd_out', 'text': '\n' + cmp_data[1]})
@@ -860,14 +764,27 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 			if id < len(self.tester.prog_out):
 				del self.tester.prog_out[id]
 			self.tester.test_iter -= 1
+			self.rebuild_view_content()
 			self.update_configs()
 			self.memorize_tests()
+
+	def run_all_tests(self):
+		if self.tester.proc_run or self.is_running_all:
+			sublime.status_message('process already running')
+			return
+		self.is_running_all = True
+		self.run_all_index = 0
+		if self.run_all_index < len(self.tester.tests):
+			self.run_single_test(self.run_all_index)
+		else:
+			self.is_running_all = False
 
 	def run(self, edit, **kwargs):
 		v = self.view
 		action = kwargs.get('action')
 		v.set_read_only(False)
-
+		
+		# Route actions to specific methods
 		if action == 'replace': v.replace(edit, Region(kwargs['region'][0], kwargs['region'][1]), kwargs['text'])
 		elif action == 'erase': v.erase(edit, Region(kwargs['region'][0], kwargs['region'][1]))
 		elif action == 'insert_opd_out':
@@ -878,6 +795,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 			opd_kwargs.pop('action', None)
 			self.make_opd(edit, **opd_kwargs)
 		elif action == 'new_test': self.new_test(edit)
+		elif action == 'run_all_tests': self.run_all_tests()
 		elif action == 'set_test_input': self.set_test_input(id=kwargs['id'], test=kwargs['data'])
 		elif action == 'delete_test': self.delete_test(edit, kwargs['id'])
 		elif action == 'erase_all': v.replace(edit, Region(0, v.size()), '\n')
@@ -888,7 +806,6 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 			v.insert(edit, self.delta_input, kwargs['text'])
 			self.delta_input += len(kwargs['text'])
 		
-		# Most actions will call sync_read_only, so we put it at the end
 		if hasattr(self, 'sync_read_only'):
 			self.sync_read_only()
 
