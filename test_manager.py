@@ -1,5 +1,5 @@
 # File: test_manager.py
-# This is the final, complete, and corrected file with all UI and logic fixes.
+# This is the final, complete, and correct file with all functions restored.
 
 import sublime, sublime_plugin
 import os
@@ -68,7 +68,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 
 			self.start = start
 			self.fold = True
-			self.shrunk = bool(self.correct_answers)
+			self.shrunk = bool(self.correct_answers) 
 			self.end = end
 			self.runtime = '-'
 			self.rtcode = None 
@@ -151,6 +151,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 				is_correct = self.is_correct_answer(_out)
 				status_class = "test-unknown"
 				status_text = "Status Unknown"
+
 				if str(self.rtcode) != '0' and self.rtcode is not None:
 					status_class = "test-decline"
 					status_text = "Runtime Error"
@@ -383,16 +384,6 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		self.prepare_code_view()
 		tester.run_test(i)
 
-	def on_accdec_action(self, i, event):
-		v = self.view
-		tester = self.tester
-		if event == 'click-accept':
-			tester.accept_out(i)
-		elif event == 'click-decline':
-			tester.decline_out(i)
-		self.update_configs()
-		self.memorize_tests()
-
 	def set_test_input(self, test=None, id=None):
 		self.tester.tests[id].test_string = test
 		self.update_configs()
@@ -465,11 +456,14 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 		with open(get_tests_file_path(self.dbg_file), 'w') as f:
 			f.write(sublime.encode_value([x.memorize() for x in (self.tester.get_tests())], True))
 
+	def on_insert(self, s):
+		self.view.run_command('test_manager', {'action': 'insert_opd_input', 'text': s})
+
 	def on_out(self, s):
-		v = self.view
+		self.view.run_command('test_manager', {'action': 'insert_opd_out', 'text': s})
 		if not self.out_region_set:
 			self.out_region_set = True
-
+	
 	def on_stop(self, rtcode, runtime, crash_line=None):
 		v = self.view
 		tester = self.tester
@@ -636,6 +630,17 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 			self.tester.test_iter -= 1
 			self.update_configs()
 			self.memorize_tests()
+
+	def run_all_tests(self):
+		if self.tester.proc_run or self.is_running_all:
+			sublime.status_message('process already running')
+			return
+		self.is_running_all = True
+		self.run_all_index = 0
+		if self.run_all_index < len(self.tester.tests):
+			self.run_single_test(self.run_all_index)
+		else:
+			self.is_running_all = False
 
 	def run(self, edit, **kwargs):
 		v = self.view
