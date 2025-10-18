@@ -20,5 +20,18 @@
                 ],
             }
         ],
+    },
+    {
+        "caption": "Tools",
+        "children": [
+            {
+                "caption": "LimeCP Helper",
+                "children": [
+                    { "caption": "Run All Testcases\t⌘+'", "command": "cp_run_all_tests" },
+                    { "caption": "Open Problem\t⌘⇧O", "command": "cp_open_problem" },
+                    { "caption": "Show Diff\t⌘⇧D", "command": "cp_show_diff" }
+                ]
+            }
+        ]
     }
 ]

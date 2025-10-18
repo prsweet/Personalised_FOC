@@ -266,9 +266,9 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                             <a href="test-delete" class="icon-button delete {disabled_class}">Delete</a>
                         </div>
                         <div class="body">
-                            <div class="data-block"><label>Input:</label><pre>{input_data}</pre></div>
-                            <div class="data-block"><label>Expected Output:</label><pre>{expected_output}</pre></div>
-                            <div class="data-block"><label>Your Output:</label><pre>{my_output}</pre></div>
+                            <div class="data-block"><label>Input:</label><br><pre>{input_data}</pre><br></div>
+                            <div class="data-block"><label>Expected Output:</label><br><pre>{expected_output}</pre><br></div>
+                            <div class="data-block"><label>Your Output:</label><br><pre>{my_output}</pre><br></div>
                         </div>
                     </div>
                 </body>"""
