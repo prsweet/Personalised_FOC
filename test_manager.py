@@ -1,6 +1,3 @@
-# File: test_manager.py
-# This is the final, complete, and correct file with all features and fixes.
-
 import sublime, sublime_plugin
 import os
 from subprocess import Popen, PIPE
@@ -32,6 +29,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
             self.fold = True
             self.runtime = '-'
             self.rtcode = None
+            self.timed_out = False 
 
         def is_correct_answer(self, answer):
             def normalize(text):
@@ -63,11 +61,17 @@ class TestManagerCommand(sublime_plugin.TextCommand):
             self.proc_run = False
             self.prog_out = [''] * len(tests)
 
-        def __on_stop(self, rtcode, runtime=-1, crash_line=None):
+        def __on_stop(self, rtcode, runtime=-1, crash_line=None, timed_out=False):
             if self.running_test is None or self.running_test >= len(self.prog_out): return
+            
+            try: # Final read to catch any buffered output post-termination
+                s = self.process_manager.read()
+                self.__on_out(s)
+            except: pass
+            
             self.prog_out[self.running_test] = self.prog_out[self.running_test].rstrip()
             self.proc_run = False
-            self.on_stop(rtcode, runtime, crash_line=crash_line)
+            self.on_stop(rtcode, runtime, crash_line=crash_line, timed_out=timed_out)
 
         def __on_out(self, s):
             n = self.running_test
@@ -77,21 +81,29 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         def __process_listener(self):
             proc = self.process_manager
             start_time = time()
+            timed_out = False
+            timeout_duration = 4.0
+            
             while proc.is_stopped() is None:
-                s = proc.read(bfsize=1 if self.sync_out else None)
-                self.__on_out(s)
-            try:
-                s = proc.read()
-                self.__on_out(s)
-            except: pass
+                if time() - start_time > timeout_duration:
+                    proc.terminate()
+                    timed_out = True
+                    break
+
+                s = proc.read(bfsize=4096)
+                if s:
+                    self.__on_out(s)
+                else:
+                    time.sleep(0.01)
+
             runtime = int((time() - start_time) * 1000)
-            self.__on_stop(proc.is_stopped(), runtime)
+            self.__on_stop(proc.is_stopped(), runtime, timed_out=timed_out)
 
         def run_test(self, id, compile_first=True):
             if compile_first:
                 cmp_data = self.process_manager.compile()
                 if cmp_data and cmp_data[0] != 0:
-                    self.__on_stop(cmp_data[0]) # Signal stop if compilation fails
+                    self.__on_stop(cmp_data[0])
                     return
             
             self.running_test = id
@@ -99,17 +111,22 @@ class TestManagerCommand(sublime_plugin.TextCommand):
             self.proc_run = True
             self.process_manager.run()
             self.process_manager.write(self.tests[id].test_string)
-            sublime.set_timeout_async(self.__process_listener)
+            sublime.set_timeout_async(self.__process_listener, 0)
 
         def get_tests(self):
             return self.tests
             
-        def terminate(self): self.process_manager.terminate()
+        def terminate(self): 
+            self.process_manager.terminate()
 
     def on_test_action(self, i, event):
         tester = self.tester
         is_busy = tester.proc_run or self.is_running_all
         
+        if event == 'test-stop':
+            tester.terminate()
+            return
+            
         if is_busy and event in {'test-edit', 'test-run', 'test-delete', 'new-test', 'run-all-tests'}:
             sublime.status_message('Cannot perform action while a process is running')
             return
@@ -131,16 +148,30 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                 del self.tester.prog_out[i]
                 self.memorize_tests()
                 self.update_configs()
-        elif event == 'test-stop': tester.terminate()
         elif event == 'test-run': self.run_single_test(i)
         elif event == 'new-test': self.new_test(self.view.window().active_view().id())
         elif event == 'run-all-tests': self.run_all_tests()
-    
+
+    def stop_all_tests(self):
+        if not self.is_running_all:
+            return
+
+        self.is_running_all = False
+        if self.tester and self.tester.proc_run:
+            self.tester.terminate()
+        else:
+            self.update_configs()
+
     def on_footer_action(self, event):
-        self.on_test_action(i=-1, event=event)
+        if event == 'stop-all-tests':
+            self.stop_all_tests()
+        else:
+            self.on_test_action(i=-1, event=event)
 
     def _execute_test(self, i, compile_first):
-        self.tester.tests[i].fold = False
+        test = self.tester.tests[i]
+        test.fold = False
+        test.timed_out = False 
         self.update_configs()
         self.prepare_code_view()
         self.tester.run_test(i, compile_first=compile_first)
@@ -155,20 +186,26 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         self.memorize_tests()
 
     def get_footer_buttons(self):
-        is_busy = self.tester.proc_run or self.is_running_all
         has_tests = len(self.tester.tests) > 0
-        disabled_class = "disabled" if is_busy else ""
-        run_all_text = "Running..." if self.is_running_all else "Run All"
+        is_any_process_running = self.is_running_all or (self.tester and self.tester.proc_run)
         
         run_all_button = ''
         if has_tests:
-            run_all_button = '<a href="run-all-tests" class="button {0}">{1}</a>'.format(disabled_class, run_all_text)
+            if self.is_running_all:
+                run_all_button = '<a href="stop-all-tests" class="button stop">Stop</a>'
+            else:
+                disabled_class = "disabled" if is_any_process_running else ""
+                run_all_button = '<a href="run-all-tests" class="button {0}">Run All</a>'.format(disabled_class)
+
+        new_case_disabled_class = "disabled" if is_any_process_running else ""
         
         styles = """
         .footer-buttons { display: flex; gap: 10px; margin-top: 10px; padding: 5px 0; }
         .footer-buttons .button { flex-grow: 1; text-align: center; background-color: color(var(--foreground) a(0.1)); border-radius: 3px; padding: 8px; text-decoration: none; color: var(--foreground); }
         .footer-buttons .button:hover { background-color: color(var(--foreground) a(0.2)); }
         .footer-buttons .button.disabled { background-color: color(var(--bluish) a(0.3)) !important; color: color(var(--foreground) a(0.8)) !important; pointer-events: none; }
+        .footer-buttons .button.stop { background-color: color(var(--redish) a(0.7)); }
+        .footer-buttons .button.stop:hover { background-color: color(var(--redish) a(0.9)); color: white; }
         """
         html = """
         <body id="foc-body">
@@ -177,7 +214,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                 {1}
             </div>
         </body>
-        """.format(disabled_class, run_all_button)
+        """.format(new_case_disabled_class, run_all_button)
         full_content = '<style>' + styles + '</style>' + html
         return Phantom(Region(self.view.size()), full_content, sublime.LAYOUT_BLOCK, self.on_footer_action)
 
@@ -196,6 +233,8 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         .icon-button { background-color: color(var(--foreground) a(0.1)); border-radius: 3px; padding: 2px 8px; text-decoration: none; color: var(--foreground); }
         .icon-button:hover { background-color: color(var(--foreground) a(0.2)); }
         .icon-button.delete:hover { background-color: color(var(--redish) a(0.8)); color: white; }
+        .icon-button.stop { background-color: color(var(--redish) a(0.7)); }
+        .icon-button.stop:hover { background-color: color(var(--redish) a(0.9)); color: white; }
         .icon-button.disabled { background-color: color(var(--bluish) a(0.3)) !important; color: color(var(--foreground) a(0.8)) !important; pointer-events: none; }
         .runtime { font-style: italic; color: color(var(--foreground) a(0.6)); }
         .data-block { margin-top: 12px; }
@@ -211,15 +250,21 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 
         for i in range(len(tester.tests)):
             test = tester.tests[i]
-            running_this_test = is_busy and i == tester.running_test
+            running_this_test = tester.proc_run and i == tester.running_test
             
             status_text, status_color = "", "var(--foreground)"
-            is_correct = test.is_correct_answer(tester.prog_out[i])
+            # Ensure prog_out is long enough before accessing
+            if i >= len(tester.prog_out):
+                is_correct = None
+            else:
+                is_correct = test.is_correct_answer(tester.prog_out[i])
 
             if running_this_test:
                 status_text, status_color = "Running...", "var(--bluish)"
             elif self.is_running_all and test.rtcode is None:
                 status_text, status_color = "Queued...", "var(--foreground)"
+            elif test.timed_out:
+                status_text, status_color = "Time Limit Exceeded", "var(--orangish)"
             elif test.rtcode is not None:
                 if str(test.rtcode) != '0':
                     status_text, status_color = "Runtime Error", "var(--orangish)"
@@ -228,13 +273,26 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                 elif is_correct is False:
                     status_text, status_color = "Wrong Answer", "var(--redish)"
 
+            action_buttons = ''
+            if running_this_test:
+                action_buttons = '<a href="test-stop" class="icon-button stop">Stop</a>'
+            else:
+                action_buttons = """
+                    <a href="test-run" class="icon-button {disabled_class}">Run</a>
+                    <a href="test-edit" class="icon-button {disabled_class}">Edit</a>
+                    <a href="test-delete" class="icon-button delete {disabled_class}">Delete</a>
+                """.format(disabled_class=disabled_class)
+
+            # Safely access prog_out
+            my_output_text = tester.prog_out[i] if i < len(tester.prog_out) else ""
+
             html_data = {
                 'test_id': i + 1, 'status_text': status_text, 'status_color': status_color,
                 'runtime': test.get_nice_runtime(),
                 'input_data': (sublime.html.escape(test.test_string, quote=False) or "&nbsp;").replace('\n', '<br>'),
-                'my_output': (sublime.html.escape(tester.prog_out[i], quote=False) or "&nbsp;").replace('\n', '<br>'),
+                'my_output': (sublime.html.escape(my_output_text, quote=False) or "&nbsp;").replace('\n', '<br>'),
                 'expected_output': (sublime.html.escape(next(iter(test.correct_answers), ""), quote=False) or "&nbsp;").replace('\n', '<br>'),
-                'disabled_class': disabled_class
+                'action_buttons': action_buttons
             }
 
             if test.fold and status_text:
@@ -246,9 +304,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                             <span class="test-name">Case {test_id}</span>
                             <span class="status-text" style="color: {status_color};">{status_text}</span>
                             <span class="runtime">({runtime})</span>
-                            <a href="test-run" class="icon-button {disabled_class}">Run</a>
-                            <a href="test-edit" class="icon-button {disabled_class}">Edit</a>
-                            <a href="test-delete" class="icon-button delete {disabled_class}">Delete</a>
+                            {action_buttons}
                         </div>
                     </div>
                 </body>"""
@@ -261,9 +317,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                             <span class="test-name">Case {test_id}</span>
                             <span class="status-text" style="color: {status_color};">{status_text}</span>
                             <span class="runtime">({runtime})</span>
-                            <a href="test-run" class="icon-button {disabled_class}">Run</a>
-                            <a href="test-edit" class="icon-button {disabled_class}">Edit</a>
-                            <a href="test-delete" class="icon-button delete {disabled_class}">Delete</a>
+                            {action_buttons}
                         </div>
                         <div class="body">
                             <div class="data-block"><label>Input:</label><br><pre>{input_data}</pre><br></div>
@@ -294,6 +348,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
     def new_test(self, edit):
         self.tester.tests.append(self.Test(''))
         self.tester.prog_out.append('')
+        self.memorize_tests() 
         self.update_configs()
         self.on_test_action(len(self.tester.tests) - 1, 'test-edit')
     
@@ -302,10 +357,15 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         with open(get_tests_file_path(self.dbg_file), 'w') as f:
             f.write(sublime.encode_value([x.memorize() for x in self.tester.get_tests()], True))
 
-    def on_stop(self, rtcode, runtime, crash_line=None):
+    def on_stop(self, rtcode, runtime, crash_line=None, timed_out=False):
         test_id = self.tester.running_test
-        self.tester.tests[test_id].set_cur_runtime(runtime)
-        self.tester.tests[test_id].set_cur_rtcode(rtcode)
+        if test_id is None or test_id >= len(self.tester.tests):
+            return 
+
+        test = self.tester.tests[test_id]
+        test.set_cur_runtime(runtime)
+        test.set_cur_rtcode(rtcode)
+        test.timed_out = timed_out
         
         self.memorize_tests()
 
@@ -390,9 +450,12 @@ class TestManagerCommand(sublime_plugin.TextCommand):
     def run_all_tests(self):
         if not self.tester or self.tester.proc_run or self.is_running_all: return
         
+        self.tester.prog_out = [''] * len(self.tester.tests)
+        
         for test in self.tester.tests:
             test.set_cur_rtcode(None)
             test.set_cur_runtime('-')
+            test.timed_out = False
         
         self.is_running_all = True
         self.update_configs()
@@ -423,7 +486,6 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         elif action == 'run_all_tests': self.run_all_tests()
         elif action == 'set_test_data': self.set_test_data(id=kwargs['id'], test=kwargs.get('test'), correct_answer=kwargs.get('correct_answer'))
         elif action == 'erase_all': self.view.replace(edit, Region(0, self.view.size()), '')
-
 
 class ViewTesterCommand(sublime_plugin.TextCommand):
     def create_opd(self, clr_tests=False, sync_out=True, use_debugger=False):

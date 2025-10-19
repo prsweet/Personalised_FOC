@@ -93,6 +93,10 @@ def stop_server():
         HTTP_SERVER.server_close()
         print("[FastOlympicCoding Companion] Server stopped.")
 
+# ... (keep the rest of the file as is) ...
+
+# ... (keep the rest of the file as is) ...
+
 class FocParseProblemCommand(sublime_plugin.WindowCommand):
     """
     A Sublime command that takes problem data and sets up the files and tests.
@@ -116,19 +120,26 @@ class FocParseProblemCommand(sublime_plugin.WindowCommand):
 
             file_path = path.join(active_folder, file_name)
 
-            if not path.exists(file_path):
-                template_path = get_settings().get('cpp_template_path')
-                template_content = ''
+            # --- UPDATED LOGIC START ---
+            
+            if not path.exists(file_path) and lang_ext == 'cpp':
+                template_content = ''  # Default to empty content
+                # Define the path to the template within the package
+                template_resource_path = "Packages/CppFastOlympicCoding/my_template.cpp"
 
-                if template_path:
-                    try:
-                        template_content = sublime.load_resource(template_path)
-                    except Exception as e:
-                        print("[FastOlympicCoding Companion] Error reading template file '{}': {}".format(template_path, e))
+                try:
+                    # Load the template file using Sublime's API
+                    template_content = sublime.load_resource(template_resource_path)
+                except Exception as e:
+                    print("[FastOlympicCoding Companion] Could not load template '{}'. Creating a blank file. Error: {}".format(template_resource_path, e))
                 
+                # Write the template content (or blank content) to the new file
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(template_content)
 
+            # --- UPDATED LOGIC END ---
+
+            # Always write the test cases received from Companion
             tests_to_write = []
             for test in data.get('tests', []):
                 tests_to_write.append({
@@ -141,7 +152,7 @@ class FocParseProblemCommand(sublime_plugin.WindowCommand):
                 f.write(sublime.encode_value(tests_to_write, True))
 
             source_view = self.window.open_file(file_path)
-            sublime.set_timeout(lambda: self.open_test_panel(source_view), 200)
+            sublime.set_timeout(lambda: self.open_test_panel(source_view), 100)
 
         except Exception as e:
             print("[FastOlympicCoding Companion] Error processing problem: {}".format(e))
@@ -165,6 +176,8 @@ class FocParseProblemCommand(sublime_plugin.WindowCommand):
         
         self.window.focus_view(source_view)
         source_view.run_command('view_tester', {'action': 'make_opd'})
+
+# ... (keep the rest of the file as is) ...
 
 # --- Plugin lifecycle hooks ---
 

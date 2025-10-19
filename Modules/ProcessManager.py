@@ -7,10 +7,12 @@ import subprocess
 import shlex
 import signal
 import sublime
+# --- CORRECTED IMPORT PATH ---
+# Two dots (..) means "go up one directory" from Modules to the main package folder
+from ..settings import get_binary_path 
 
 class ProcessManager(object):
     def __init__(self, file, syntax, run_settings=None):
-
         super(ProcessManager, self).__init__()
         self.syntax = syntax
         self.file = file
@@ -20,6 +22,7 @@ class ProcessManager(object):
         self.run = self.run_file
         self.run_settings = run_settings
         self.file_name = path.splitext(path.split(file)[1])[0]
+        self.binary_path = get_binary_path(file)
 
     def get_path(self, lst):
         rez = ''
@@ -39,6 +42,7 @@ class ProcessManager(object):
             source_file=self.file,
             source_file_dir=path.dirname(self.file),
             file_name=self.file_name,
+            binary_path=self.binary_path, # Add our new path as a variable
             args=args
         )
 
@@ -52,7 +56,8 @@ class ProcessManager(object):
             if file_ext in x['extensions']:
                 if x['compile_cmd'] is None:
                     return None
-                return self.format_command(x['compile_cmd'])
+                cmd_template = x['compile_cmd'].replace(self.file_name, '{binary_path}')
+                return self.format_command(cmd_template)
         else:
             return -1
 
@@ -63,7 +68,9 @@ class ProcessManager(object):
             if file_ext in x['extensions']:
                 if x['run_cmd'] is None:
                     return None
-                return self.format_command(x['run_cmd'], args=args)
+                cmd_template = x['run_cmd'].replace('./"{file_name}"', '"{binary_path}"')
+                cmd_template = cmd_template.replace('"{file_name}"', '"{binary_path}"')
+                return self.format_command(cmd_template, args=args)
         else:
             return -1
 
@@ -73,7 +80,7 @@ class ProcessManager(object):
             PIPE = subprocess.PIPE
             p = subprocess.Popen(cmd, \
                 shell=True, stdin=PIPE, stdout=PIPE, stderr=subprocess.STDOUT, \
-                    cwd=os.path.split(self.file)[0])
+                    cwd=path.dirname(self.binary_path))
             compile_result = p.communicate()[0].decode('utf-8', 'ignore')
             return (p.returncode, compile_result)
 
@@ -103,7 +110,7 @@ class ProcessManager(object):
             stdout=PIPE,
             stderr=subprocess.STDOUT,
             bufsize=0,
-            cwd=os.path.split(self.file)[0],
+            cwd=path.dirname(self.binary_path),
             startupinfo=startupinfo,
             preexec_fn=preexec_fn,
             universal_newlines=True
@@ -111,8 +118,11 @@ class ProcessManager(object):
     
     def insert(self, s):
         if self.process.poll() is None:
-            self.process.stdin.write(s)
-            self.process.stdin.flush()
+            try:
+                self.process.stdin.write(s)
+                self.process.stdin.flush()
+            except (IOError, BrokenPipeError):
+                pass
 
     def communicate(self, s, timeout=None):
         return self.process.communicate(input=s, timeout=timeout)
@@ -133,7 +143,11 @@ class ProcessManager(object):
             self.insert(input_data)
 
     def terminate(self):
+        if self.process.poll() is not None: return
         if sublime.platform() == 'linux':
-            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            try:
+                os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
         else:
             self.process.kill()
