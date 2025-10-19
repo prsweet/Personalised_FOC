@@ -64,7 +64,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         def __on_stop(self, rtcode, runtime=-1, crash_line=None, timed_out=False):
             if self.running_test is None or self.running_test >= len(self.prog_out): return
             
-            try: # Final read to catch any buffered output post-termination
+            try:
                 s = self.process_manager.read()
                 self.__on_out(s)
             except: pass
@@ -226,7 +226,17 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         
         styles = """
         body#foc-body { background-color: transparent; margin: 0; padding: 2px 0; font-family: var(--font_face); }
-        .test-config { border: 1px solid color(var(--foreground) a(0.2)); border-radius: 5px; padding: 10px; margin-bottom: 8px; background-color: color(var(--foreground) a(0.05)); }
+        .test-config { 
+            border: 1px solid color(var(--foreground) a(0.2)); 
+            border-radius: 5px; 
+            padding: 10px; 
+            margin-bottom: 8px; 
+            background-color: color(var(--foreground) a(0.05)); 
+        }
+        .test-config.passed { background-color: color(var(--greenish) a(0.1)); border-color: color(var(--greenish) a(0.4)); }
+        .test-config.wrong { background-color: color(var(--redish) a(0.1)); border-color: color(var(--redish) a(0.4)); }
+        .test-config.error { background-color: color(var(--orangish) a(0.1)); border-color: color(var(--orangish) a(0.4)); }
+
         .header { display: flex; align-items: center; gap: 10px; }
         .test-name { font-weight: bold; margin-right: auto; }
         .toggle-arrow { text-decoration: none; color: var(--foreground); font-weight: bold; }
@@ -253,7 +263,8 @@ class TestManagerCommand(sublime_plugin.TextCommand):
             running_this_test = tester.proc_run and i == tester.running_test
             
             status_text, status_color = "", "var(--foreground)"
-            # Ensure prog_out is long enough before accessing
+            container_class = "" 
+
             if i >= len(tester.prog_out):
                 is_correct = None
             else:
@@ -265,13 +276,17 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                 status_text, status_color = "Queued...", "var(--foreground)"
             elif test.timed_out:
                 status_text, status_color = "Time Limit Exceeded", "var(--orangish)"
+                container_class = "error" 
             elif test.rtcode is not None:
                 if str(test.rtcode) != '0':
                     status_text, status_color = "Runtime Error", "var(--orangish)"
+                    container_class = "error" 
                 elif is_correct is True:
                     status_text, status_color = "Passed", "var(--greenish)"
+                    container_class = "passed" 
                 elif is_correct is False:
                     status_text, status_color = "Wrong Answer", "var(--redish)"
+                    container_class = "wrong" 
 
             action_buttons = ''
             if running_this_test:
@@ -283,10 +298,10 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                     <a href="test-delete" class="icon-button delete {disabled_class}">Delete</a>
                 """.format(disabled_class=disabled_class)
 
-            # Safely access prog_out
             my_output_text = tester.prog_out[i] if i < len(tester.prog_out) else ""
 
             html_data = {
+                'container_class': container_class,
                 'test_id': i + 1, 'status_text': status_text, 'status_color': status_color,
                 'runtime': test.get_nice_runtime(),
                 'input_data': (sublime.html.escape(test.test_string, quote=False) or "&nbsp;").replace('\n', '<br>'),
@@ -298,7 +313,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
             if test.fold and status_text:
                 html_template = """
                 <body id="foc-body">
-                    <div class="test-config">
+                    <div class="test-config {container_class}">
                         <div class="header">
                             <a href="test-click" class="toggle-arrow">▶</a>
                             <span class="test-name">Case {test_id}</span>
@@ -311,7 +326,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
             else:
                 html_template = """
                 <body id="foc-body">
-                    <div class="test-config">
+                    <div class="test-config {container_class}">
                         <div class="header">
                             <a href="test-click" class="toggle-arrow">▼</a>
                             <span class="test-name">Case {test_id}</span>
@@ -367,6 +382,12 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         test.set_cur_rtcode(rtcode)
         test.timed_out = timed_out
         
+        # --- THIS IS THE NEW LOGIC ---
+        is_correct = test.is_correct_answer(self.tester.prog_out[test_id])
+        if not timed_out and str(rtcode) == '0' and is_correct is True:
+            test.fold = True # Collapse the container if the test passed
+        # --- END OF NEW LOGIC ---
+
         self.memorize_tests()
 
         if self.is_running_all:
@@ -486,7 +507,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         elif action == 'run_all_tests': self.run_all_tests()
         elif action == 'set_test_data': self.set_test_data(id=kwargs['id'], test=kwargs.get('test'), correct_answer=kwargs.get('correct_answer'))
         elif action == 'erase_all': self.view.replace(edit, Region(0, self.view.size()), '')
-
+        
 class ViewTesterCommand(sublime_plugin.TextCommand):
     def create_opd(self, clr_tests=False, sync_out=True, use_debugger=False):
         v = self.view
