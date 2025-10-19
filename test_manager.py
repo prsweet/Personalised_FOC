@@ -2,7 +2,8 @@ import sublime, sublime_plugin
 import os
 from subprocess import Popen, PIPE
 from sublime import Region, Phantom, PhantomSet
-from time import time
+import time
+import re
 
 from .Modules.ProcessManager import ProcessManager
 from .settings import base_name, get_settings, get_tests_file_path, root_dir
@@ -60,13 +61,15 @@ class TestManagerCommand(sublime_plugin.TextCommand):
             self.on_stop = on_stop
             self.proc_run = False
             self.prog_out = [''] * len(tests)
+            self.user_initiated_stop = False
 
         def __on_stop(self, rtcode, runtime=-1, crash_line=None, timed_out=False):
+            if not self.proc_run: return
             if self.running_test is None or self.running_test >= len(self.prog_out): return
             
             try:
                 s = self.process_manager.read()
-                self.__on_out(s)
+                if s: self.__on_out(s)
             except: pass
             
             self.prog_out[self.running_test] = self.prog_out[self.running_test].rstrip()
@@ -80,12 +83,13 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 
         def __process_listener(self):
             proc = self.process_manager
-            start_time = time()
+            start_time = time.time()
             timed_out = False
-            timeout_duration = 4.0
+            
+            timeout_duration = get_settings().get('stress_time_limit_seconds', 4.0)
             
             while proc.is_stopped() is None:
-                if time() - start_time > timeout_duration:
+                if time.time() - start_time > timeout_duration:
                     proc.terminate()
                     timed_out = True
                     break
@@ -96,28 +100,44 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                 else:
                     time.sleep(0.01)
 
-            runtime = int((time() - start_time) * 1000)
+            if self.user_initiated_stop:
+                return
+
+            runtime = int((time.time() - start_time) * 1000)
             self.__on_stop(proc.is_stopped(), runtime, timed_out=timed_out)
 
+        # In Tester.run_test, ensure newline and close stdin after writing
         def run_test(self, id, compile_first=True):
             if compile_first:
                 cmp_data = self.process_manager.compile()
                 if cmp_data and cmp_data[0] != 0:
                     self.__on_stop(cmp_data[0])
                     return
-            
+
             self.running_test = id
             self.prog_out[id] = ''
             self.proc_run = True
             self.process_manager.run()
-            self.process_manager.write(self.tests[id].test_string)
+            
+            inp = self.tests[id].test_string or ""
+            if not inp.endswith("\n"):
+                inp += "\n"
+            self.process_manager.write(inp)
+            # important: finish input so program knows no more data coming
+            self.process_manager.finish_input()
+
             sublime.set_timeout_async(self.__process_listener, 0)
 
         def get_tests(self):
             return self.tests
             
         def terminate(self): 
+            if not self.proc_run: return
+            
+            self.user_initiated_stop = True
             self.process_manager.terminate()
+            self.__on_stop(rtcode='ABORTED', runtime=-1)
+            self.user_initiated_stop = False
 
     def on_test_action(self, i, event):
         tester = self.tester
@@ -172,11 +192,10 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         test = self.tester.tests[i]
         test.fold = False
         test.timed_out = False 
-        self.update_configs()
-        self.prepare_code_view()
         self.tester.run_test(i, compile_first=compile_first)
 
     def run_single_test(self, i):
+        self.prepare_code_view()
         self._execute_test(i, compile_first=True)
 
     def set_test_data(self, id=None, test=None, correct_answer=None):
@@ -236,7 +255,6 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         .test-config.passed { background-color: color(var(--greenish) a(0.1)); border-color: color(var(--greenish) a(0.4)); }
         .test-config.wrong { background-color: color(var(--redish) a(0.1)); border-color: color(var(--redish) a(0.4)); }
         .test-config.error { background-color: color(var(--orangish) a(0.1)); border-color: color(var(--orangish) a(0.4)); }
-
         .header { display: flex; align-items: center; gap: 10px; }
         .test-name { font-weight: bold; margin-right: auto; }
         .toggle-arrow { text-decoration: none; color: var(--foreground); font-weight: bold; }
@@ -278,7 +296,9 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                 status_text, status_color = "Time Limit Exceeded", "var(--orangish)"
                 container_class = "error" 
             elif test.rtcode is not None:
-                if str(test.rtcode) != '0':
+                if str(test.rtcode) == 'ABORTED':
+                    status_text, status_color = "Stopped by user", "var(--orangish)"
+                elif str(test.rtcode) != '0':
                     status_text, status_color = "Runtime Error", "var(--orangish)"
                     container_class = "error" 
                 elif is_correct is True:
@@ -375,6 +395,8 @@ class TestManagerCommand(sublime_plugin.TextCommand):
     def on_stop(self, rtcode, runtime, crash_line=None, timed_out=False):
         test_id = self.tester.running_test
         if test_id is None or test_id >= len(self.tester.tests):
+            if not self.is_running_all:
+                self.update_configs()
             return 
 
         test = self.tester.tests[test_id]
@@ -382,17 +404,16 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         test.set_cur_rtcode(rtcode)
         test.timed_out = timed_out
         
-        # --- THIS IS THE NEW LOGIC ---
         is_correct = test.is_correct_answer(self.tester.prog_out[test_id])
         if not timed_out and str(rtcode) == '0' and is_correct is True:
-            test.fold = True # Collapse the container if the test passed
-        # --- END OF NEW LOGIC ---
-
+            test.fold = True
+        
         self.memorize_tests()
 
         if self.is_running_all:
             self.run_all_index += 1
             if self.run_all_index < len(self.tester.tests):
+                self.update_configs()
                 self._execute_test(self.run_all_index, compile_first=False)
             else:
                 self.is_running_all = False
@@ -471,6 +492,8 @@ class TestManagerCommand(sublime_plugin.TextCommand):
     def run_all_tests(self):
         if not self.tester or self.tester.proc_run or self.is_running_all: return
         
+        self.prepare_code_view()
+
         self.tester.prog_out = [''] * len(self.tester.tests)
         
         for test in self.tester.tests:
@@ -577,10 +600,17 @@ class TestEvents(sublime_plugin.EventListener):
         if not source_view: return
 
         content = view.substr(sublime.Region(0, view.size()))
-        parts = content.split("\n\n--- EXPECTED OUTPUT ---\n")
-        
-        input_part = parts[0].replace("--- INPUT ---\n", "", 1)
-        output_part = parts[1] if len(parts) > 1 else ""
+
+        # Allow flexible spacing around separators
+        m = re.split(r'\n\s*---\s*EXPECTED\s+OUTPUT\s*---\s*\n', content, maxsplit=1)
+        input_part = m[0].lstrip()
+        # Remove leading marker if present
+        if input_part.startswith("--- INPUT ---"):
+            input_part = input_part.replace("--- INPUT ---", "", 1).lstrip('\n')
+        output_part = m[1] if len(m) > 1 else ""
+        # strip only trailing single newline but preserve intentional formatting
+        input_part = input_part.rstrip('\n')
+        output_part = output_part.rstrip('\n')
 
         source_view.run_command('test_manager', {
             'action': 'set_test_data',

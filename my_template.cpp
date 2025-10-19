@@ -1,4 +1,4 @@
-#include <bits/stdc++.h>
+#include <iostream>
 using namespace std;
 
 void solve() 
@@ -9,14 +9,10 @@ void solve()
 signed main()
 {
     ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-    cout.tie(NULL);
+    cin.tie(nullptr);
+    cout.tie(nullptr);
 
-    int t = 1;
-    // cin >> t;
-    while(t--) {
-        solve();
-    }
+    solve();
 
     return 0;
 }
