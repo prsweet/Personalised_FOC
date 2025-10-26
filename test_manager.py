@@ -34,7 +34,9 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 
         def is_correct_answer(self, answer):
             def normalize(text):
-                return '\n'.join(line.strip() for line in text.strip().splitlines())
+                # --- THIS IS THE FIX ---
+                # Use rstrip() to keep leading spaces but remove trailing ones.
+                return '\n'.join(line.rstrip() for line in text.strip().splitlines())
 
             if not self.correct_answers:
                 return None
