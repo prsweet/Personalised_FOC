@@ -228,13 +228,17 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         """
         html = """
         <body id="foc-body">
+            <style>
+                {styles}
+            </style>
             <div class="footer-buttons">
                 <a href="new-test" class="button {0}">New Case</a>
                 {1}
             </div>
         </body>
-        """.format(new_case_disabled_class, run_all_button)
-        full_content = '<style>' + styles + '</style>' + html
+        """.format(new_case_disabled_class, run_all_button, styles=styles)
+        
+        full_content = html
         return Phantom(Region(self.view.size()), full_content, sublime.LAYOUT_BLOCK, self.on_footer_action)
 
     def update_configs(self):
@@ -265,9 +269,31 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         .icon-button.stop:hover { background-color: color(var(--redish) a(0.9)); color: white; }
         .icon-button.disabled { background-color: color(var(--bluish) a(0.3)) !important; color: color(var(--foreground) a(0.8)) !important; pointer-events: none; }
         .runtime { font-style: italic; color: color(var(--foreground) a(0.6)); }
-        .data-block { margin-top: 12px; }
-        .data-block label { font-weight: bold; color: color(var(--foreground) a(0.7)); display: block; margin-bottom: 4px;}
-        .data-block pre { background-color: color(var(--background) a(0.5)); padding: 8px; border-radius: 3px; margin: 0; white-space: pre-wrap; word-wrap: break-word; font-family: var(--font_face); font-size: 0.9rem;}
+        
+        /* --- THIS IS THE SECTION YOU WANTED CHANGED --- */
+        .data-block { 
+            margin-top: 12px; 
+            background-color: var(--background); 
+            border: 1px solid color(var(--foreground) a(0.3));
+            padding: 8px; 
+            border-radius: 3px; 
+        }
+        .data-block label { 
+            font-weight: bold; 
+            color: color(var(--foreground) a(0.7)); 
+            display: block; 
+            margin-bottom: 5px;
+        }
+        .data-block pre { 
+            margin: 0; 
+            margin-top: 5px; /* Added space between label and content */
+            white-space: pre-wrap; 
+            word-wrap: break-word; 
+            font-family: var(--font_face); 
+            font-size: 0.9rem;
+        }
+        /* --- END OF CHANGED SECTION --- */
+
         .status-text { font-weight: bold; }
         """
 
@@ -324,9 +350,9 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                 'container_class': container_class,
                 'test_id': i + 1, 'status_text': status_text, 'status_color': status_color,
                 'runtime': test.get_nice_runtime(),
-                'input_data': (sublime.html.escape(test.test_string, quote=False) or "&nbsp;").replace('\n', '<br>'),
-                'my_output': (sublime.html.escape(my_output_text, quote=False) or "&nbsp;").replace('\n', '<br>'),
-                'expected_output': (sublime.html.escape(next(iter(test.correct_answers), ""), quote=False) or "&nbsp;").replace('\n', '<br>'),
+                'input_data': (sublime.html.escape(test.test_string, quote=False) or "&nbsp;").replace(' ', '&nbsp;').replace('\n', '<br>'),
+                'my_output': (sublime.html.escape(my_output_text, quote=False) or "&nbsp;").replace(' ', '&nbsp;').replace('\n', '<br>'),
+                'expected_output': (sublime.html.escape(next(iter(test.correct_answers), ""), quote=False) or "&nbsp;").replace(' ', '&nbsp;').replace('\n', '<br>'),
                 'action_buttons': action_buttons
             }
 
@@ -349,21 +375,22 @@ class TestManagerCommand(sublime_plugin.TextCommand):
                     <div class="test-config {container_class}">
                         <div class="header">
                             <a href="test-click" class="toggle-arrow">▼</a>
-                            <span class="test-name">Case {test_id}</span>
+                            <span class.py="test-name">Case {test_id}</span>
                             <span class="status-text" style="color: {status_color};">{status_text}</span>
-                            <span class="runtime">({runtime})</span>
+                            <span class.py="runtime">({runtime})</span>
                             {action_buttons}
                         </div>
                         <div class="body">
-                            <div class="data-block"><label>Input:</label><br><pre>{input_data}</pre><br></div>
-                            <div class="data-block"><label>Expected Output:</label><br><pre>{expected_output}</pre><br></div>
-                            <div class="data-block"><label>Your Output:</label><br><pre>{my_output}</pre><br></div>
+                            <div class="data-block"><label>Input:</label><br><pre>{input_data}</pre></div>
+                            <div class="data-block"><label>Expected Output:</label><br><pre>{expected_output}</pre></div>
+                            <div class="data-block"><label>Your Output:</label><br><pre>{my_output}</pre></div>
                         </div>
                     </div>
                 </body>"""
             
             content = html_template.format(**html_data)
-            full_content = '<style>' + styles + '</style>' + content
+            content = content.replace('<body id="foc-body">', '<body id="foc-body">' + '<style>' + styles + '</style>')
+            full_content = content
             configs.append(Phantom(Region(pt), full_content, sublime.LAYOUT_BLOCK, lambda event, i=i: self.on_test_action(i, event)))
             pt += 1
 
@@ -440,7 +467,8 @@ class TestManagerCommand(sublime_plugin.TextCommand):
     def get_view_by_id(self, view_id):
         for window in sublime.windows():
             for view in window.views():
-                if view.id() == view_id: return view
+                if view.id() == view_id: 
+                    return view
         return None
 
     def make_opd(self, edit, run_file=None, build_sys=None, clr_tests=False, \
