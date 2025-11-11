@@ -316,5 +316,11 @@
 	//Run
     { "keys": ["super+'"], "command": "cp_run_all_tests" },
     { "keys": ["super+shift+o"], "command": "cp_open_problem" },
-    { "keys": ["super+shift+d"], "command": "cp_show_diff" }
+    { "keys": ["super+shift+d"], "command": "cp_show_diff" },
+
+	//Reload
+    {
+        "keys": ["super+shift+r"],  // Cmd+Shift+R
+        "command": "foc_reload_companion"
+    }
 ]

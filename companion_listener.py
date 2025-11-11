@@ -192,3 +192,25 @@ def plugin_loaded():
 
 def plugin_unloaded():
     stop_server()
+
+class FocReloadCompanionCommand(sublime_plugin.WindowCommand):
+    """
+    Reloads the FastOlympicCoding Companion plugin and restarts the listener.
+    """
+    def run(self):
+        try:
+            print("[FastOlympicCoding Companion] Reloading plugin...")
+            stop_server()  # Stop current server if running
+            
+            # Reload the plugin package itself
+            package_name = "CppFastOlympicCoding"
+            sublime_plugin.reload_plugin("{}.companion_listener".format(package_name))
+            
+            # Give Sublime a bit of time to reload properly
+            sublime.set_timeout_async(lambda: start_server(), 1000)
+            
+            sublime.status_message("FOC: Companion reloaded successfully.")
+            print("[FastOlympicCoding Companion] Reload complete.")
+        except Exception as e:
+            print("[FastOlympicCoding Companion] Reload failed: {}".format(e))
+            sublime.status_message("FOC: Reload failed. Check console.")
