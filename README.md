@@ -9,7 +9,7 @@ Fast Olympic Coding plugin for Sublime Text 3
  * [Debugger](#debugger)
  
 ### Installation
- * Install via [Package Control](https://packagecontrol.io/packages/CppFastOlympicCoding)
+ * Install via [Package Control](https://packagecontrol.io/packages/Personalised_FOC)
  * Install manually:<br>
        [download plugin](https://github.com/Jatana/FastOlympicCoding/archive/master.zip) into packages (`Preferences — Browse packages...`)<br>
        `Warning! rename plugin folder to FastOlympicCoding`
@@ -70,7 +70,7 @@ This is the commands file:
     "companion_listener_port": 10043,
 
     // Use the template file directly from the package
-    "cpp_template_path": "Packages/CppFastOlympicCoding/my_template.cpp", 
+    "cpp_template_path": "Packages/Personalised_FOC/my_template.cpp", 
 
     // The extension for newly created files (e.g., "cpp", "py")
     "default_language_extension": "cpp"
