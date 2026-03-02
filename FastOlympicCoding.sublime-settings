@@ -1,24 +1,24 @@
 {
-	// run settings:
+	// run settings (works on macOS and Linux):
 	// "{file}": file name
 	// "{source_file}": relative path to file
 	// "{source_file_dir}": relative path to file directory
-	// "{file_name}": file basename
+	// "{file_name}": file basename (without extension)
 	"run_settings": [
 		{
 			"name": "C++",
 			"extensions": ["cpp"],
-			"compile_cmd": "g++ '{source_file}' -o {file_name}",
-			"run_cmd": "./\"{file_name}\" {args} -debug"
+			"compile_cmd": "g++ '{source_file}' -o '{file_name}'",
+			"run_cmd": "./'{file_name}' {args}"
 		},
 
 		{
 			"name": "Python",
 			"extensions": ["py"],
 			"compile_cmd": null,
-			"run_cmd": "python '{source_file}'"
+			"run_cmd": "python3 '{source_file}'"
 		},
-		
+
 		{
 			"name": "Java",
 			"extensions": ["java"],

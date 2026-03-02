@@ -1,0 +1,25 @@
+{
+	// Windows-specific overrides for compile and run commands
+	"run_settings": [
+		{
+			"name": "C++",
+			"extensions": ["cpp"],
+			"compile_cmd": "g++ \"{source_file}\" -o \"{file_name}.exe\"",
+			"run_cmd": "\"{file_name}.exe\" {args}"
+		},
+
+		{
+			"name": "Python",
+			"extensions": ["py"],
+			"compile_cmd": null,
+			"run_cmd": "python \"{source_file}\""
+		},
+
+		{
+			"name": "Java",
+			"extensions": ["java"],
+			"compile_cmd": "javac -J-Dfile.encoding=utf8 -d \"{source_file_dir}\" \"{source_file}\"",
+			"run_cmd": "java -classpath \"{source_file_dir}\" \"{file_name}\""
+		}
+	]
+}

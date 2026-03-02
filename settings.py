@@ -5,9 +5,7 @@ import os
 root_dir = os.path.split(__file__)[0]
 base_name = os.path.split(root_dir)[1]
 settings_file = 'FastOlympicCoding.sublime-settings'
-default_settings_file = 'FastOlympicCoding ({os}).sublime-settings'.format(
-    os={ 'windows': 'Windows', 'linux': 'Linux', 'osx': 'OSX' }[sublime.platform().lower()]
-)
+default_settings_file = settings_file
 tests_file_suffix = ':tests'
 settings = {}
 
