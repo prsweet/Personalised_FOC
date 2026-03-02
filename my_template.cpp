@@ -3,7 +3,6 @@ using namespace std;
 #define all(x) (x).begin(), (x).end()
 #define rall(x) (x).rbegin(), (x).rend()
 #define int long long
-#define mod 1000000007
 #define F first
 #define S second
 #define llmax LLONG_MAX
@@ -12,6 +11,9 @@ using namespace std;
 #define pq(t, v, c) priority_queue<t, v, c>
 #define vvv(x) vector<vector<x>>
 #define pp(a, b) pair<a, b>
+#define ss(x) set<x>
+#define mm(a, b) map<a, b>
+#define mod 1000000007
 
 /*
     Do your Shit:
@@ -29,7 +31,7 @@ signed main()
     cin.tie(nullptr);
     cout.tie(nullptr);
 
-    int t = 1;
-    // cin >> t;
-    while (t--) solve();
+    int tt = 1;
+    // cin >> tt;
+    while (tt--) solve();
 }

@@ -9,9 +9,7 @@ default_settings_file = 'FastOlympicCoding ({os}).sublime-settings'.format(
     os={ 'windows': 'Windows', 'linux': 'Linux', 'osx': 'OSX' }[sublime.platform().lower()]
 )
 tests_file_suffix = ':tests'
-tests_relative_dir = ''
 settings = {}
-run_supported_exts = set()
 
 def get_settings():
     return settings
@@ -28,18 +26,7 @@ def is_run_supported_ext(ext):
                 return True
     return False
 
-def get_supported_exts(lang):
-    _run_settings = get_settings().get('run_settings', None)
-    if _run_settings is not None:
-        for option in _run_settings:
-            if option['name'] == lang:
-                return option['extensions']
-        return []
-    return []
 
-def is_lang_view(view, lang):
-    if view.file_name() is None: return False
-    return os.path.splitext(view.file_name())[1][1:] in get_supported_exts(lang)
 
 def try_load_settings():
     _settings = sublime.load_settings(settings_file)

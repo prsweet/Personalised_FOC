@@ -3,7 +3,6 @@ import os
 from subprocess import Popen, PIPE
 from sublime import Region, Phantom, PhantomSet
 import time
-import re
 
 from .Modules.ProcessManager import ProcessManager
 from .settings import base_name, get_settings, get_tests_file_path, root_dir
@@ -474,11 +473,11 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         return None
 
     def make_opd(self, edit, run_file=None, build_sys=None, clr_tests=False, \
-        sync_out=False, code_view_id=None, use_debugger=False, load_session=False):
+        sync_out=False, code_view_id=None):
         v = self.view
         if hasattr(self, 'tester') and self.tester and self.tester.proc_run:
             self.tester.terminate()
-            kwargs = {'action': 'make_opd', 'run_file': run_file, 'build_sys': build_sys, 'clr_tests': clr_tests, 'sync_out': sync_out, 'code_view_id': code_view_id, 'use_debugger': use_debugger, 'load_session': load_session}
+            kwargs = {'action': 'make_opd', 'run_file': run_file, 'build_sys': build_sys, 'clr_tests': clr_tests, 'sync_out': sync_out, 'code_view_id': code_view_id}
             sublime.set_timeout_async(lambda: v.run_command('test_manager', kwargs), 30)
             return
 
@@ -486,7 +485,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         v.set_status('opd_info', 'opdebugger-file')
         self.clear_all()
 
-        self.session = {'run_file': run_file, 'build_sys': build_sys, 'clr_tests': clr_tests, 'sync_out': sync_out, 'code_view_id': code_view_id, 'use_debugger': use_debugger}
+        self.session = {'run_file': run_file, 'build_sys': build_sys, 'clr_tests': clr_tests, 'sync_out': sync_out, 'code_view_id': code_view_id}
         self.dbg_file = run_file
         self.code_view_id = code_view_id
 
@@ -562,7 +561,7 @@ class TestManagerCommand(sublime_plugin.TextCommand):
         elif action == 'erase_all': self.view.replace(edit, Region(0, self.view.size()), '')
         
 class ViewTesterCommand(sublime_plugin.TextCommand):
-    def create_opd(self, clr_tests=False, sync_out=True, use_debugger=False):
+    def create_opd(self, clr_tests=False, sync_out=True):
         v = self.view
         if v.is_dirty(): v.run_command('save')
         file_syntax = v.scope_name(v.sel()[0].begin()).rstrip().split()[0]
@@ -588,63 +587,15 @@ class ViewTesterCommand(sublime_plugin.TextCommand):
         dbg_view.set_name(os.path.basename(v.file_name()) + ' - run')
         dbg_view.run_command('test_manager', {
             'action': 'make_opd', 'build_sys': file_syntax, 'run_file': v.file_name(),
-            'clr_tests': clr_tests, 'sync_out': sync_out, 'code_view_id': v.id(),
-            'use_debugger': use_debugger
+            'clr_tests': clr_tests, 'sync_out': sync_out, 'code_view_id': v.id()
         })
     
     def run(self, edit, **kwargs):
         action = kwargs.get('action')
         if action == 'make_opd':
-            self.create_opd(clr_tests=kwargs.get('clr_tests', False), sync_out=kwargs.get('sync_out', True), use_debugger=kwargs.get('use_debugger', False))
+            self.create_opd(clr_tests=kwargs.get('clr_tests', False), sync_out=kwargs.get('sync_out', True))
         elif action == 'show_crash_line':
             pt = self.view.text_point(kwargs['crash_line'] - 1, 0)
             self.view.erase_regions('crash_line')
             self.view.add_regions('crash_line', [sublime.Region(pt, pt)], 'string', 'dot', sublime.DRAW_SOLID_UNDERLINE | sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE)
             sublime.set_timeout_async(lambda pt=pt: self.view.show_at_center(pt), 50)
-
-class TestEditCommand(sublime_plugin.TextCommand):
-    def run(self, edit, **kwargs):
-        action = kwargs.get('action')
-        if action == 'init':
-            self.view.settings().set('test_id', kwargs['test_id'])
-            self.view.settings().set('source_view_id', kwargs['source_view_id'])
-            
-            test_input = kwargs.get('test', '')
-            correct_answer = kwargs.get('correct_answer', '')
-            content = "--- INPUT ---\n{0}\n\n--- EXPECTED OUTPUT ---\n{1}".format(test_input, correct_answer)
-            
-            self.view.insert(edit, 0, content)
-            self.view.set_name("Edit Test Case {}".format(kwargs['test_id'] + 1))
-            self.view.set_scratch(True)
-
-class TestEvents(sublime_plugin.EventListener):
-    def on_close(self, view):
-        if not view.name().startswith("Edit Test Case"): return
-
-        test_id = view.settings().get('test_id')
-        source_view_id = view.settings().get('source_view_id')
-        
-        if test_id is None or source_view_id is None: return
-
-        source_view = next((v for w in sublime.windows() for v in w.views() if v.id() == source_view_id), None)
-        if not source_view: return
-
-        content = view.substr(sublime.Region(0, view.size()))
-
-        # Allow flexible spacing around separators
-        m = re.split(r'\n\s*---\s*EXPECTED\s+OUTPUT\s*---\s*\n', content, maxsplit=1)
-        input_part = m[0].lstrip()
-        # Remove leading marker if present
-        if input_part.startswith("--- INPUT ---"):
-            input_part = input_part.replace("--- INPUT ---", "", 1).lstrip('\n')
-        output_part = m[1] if len(m) > 1 else ""
-        # strip only trailing single newline but preserve intentional formatting
-        input_part = input_part.rstrip('\n')
-        output_part = output_part.rstrip('\n')
-
-        source_view.run_command('test_manager', {
-            'action': 'set_test_data',
-            'id': test_id,
-            'test': input_part,
-            'correct_answer': output_part
-        })
