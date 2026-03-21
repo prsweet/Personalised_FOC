@@ -38,5 +38,10 @@
 	"companion_listener_port": 10043,
 
 	// default language extension for new files from companion
-	"default_language_extension": "cpp"
+	"default_language_extension": "cpp",
+
+	// Codeforces submission language
+	// Set via Command Palette: "FastOlympicCoding: Select Submission Language"
+	// If not set, defaults based on file extension (cpp->G++20, py->Python3, etc.)
+	// "cf_selected_language_id": "89"
 }

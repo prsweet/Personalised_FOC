@@ -88,4 +88,16 @@ def get_binary_path(source_file):
     file_name_without_ext = os.path.basename(os.path.splitext(source_file)[0])
     return os.path.join(compiled_dir, file_name_without_ext)
 
+def get_meta_file_path(source_file):
+    """
+    Returns the path for the metadata file (URL, problem name, etc.)
+    inside the .TestCases directory.
+    """
+    test_cases_dir = get_hidden_folder_path('.TestCases')
+    if not test_cases_dir:
+        return source_file + ':meta'
+
+    base = os.path.basename(source_file)
+    return os.path.join(test_cases_dir, base + ':meta')
+
 # --- NEW MERGED FUNCTIONS END ---

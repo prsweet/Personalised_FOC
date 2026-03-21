@@ -397,6 +397,31 @@ class TestManagerCommand(sublime_plugin.TextCommand):
 
         configs.append(self.get_footer_buttons())
 
+        # Store test results summary in view settings for the submitter
+        test_results = {
+            'total': len(tester.tests), 'passed': 0,
+            'failed': 0, 'error': 0, 'not_run': 0,
+            'complete': not is_busy,
+            'run_file': getattr(self, 'dbg_file', ''),
+        }
+        for idx in range(len(tester.tests)):
+            t = tester.tests[idx]
+            if t.rtcode is None:
+                test_results['not_run'] += 1
+            elif t.timed_out or (str(t.rtcode) not in ('0', 'ABORTED')):
+                test_results['error'] += 1
+            elif str(t.rtcode) == 'ABORTED':
+                test_results['not_run'] += 1
+            else:
+                ic = t.is_correct_answer(tester.prog_out[idx] if idx < len(tester.prog_out) else "")
+                if ic is True:
+                    test_results['passed'] += 1
+                elif ic is False:
+                    test_results['failed'] += 1
+                else:
+                    test_results['passed'] += 1  # ran OK, no expected answer
+        v.settings().set('foc_test_results', test_results)
+
         v.run_command('test_manager', {'action': 'erase_all'})
         v.run_command('append', {'characters': '\n' * (len(tester.tests) + 1)})
 

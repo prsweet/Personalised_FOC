@@ -17,5 +17,13 @@
 		"caption": "FastOlympicCoding: Run All Tests",
 		"command": "test_manager",
 		"args": {"action": "run_all_tests"}
+	},
+	{
+		"caption": "FastOlympicCoding: Submit Solution",
+		"command": "foc_submit_solution"
+	},
+	{
+		"caption": "FastOlympicCoding: Select Submission Language",
+		"command": "foc_select_language"
 	}
 ]

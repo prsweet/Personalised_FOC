@@ -48,5 +48,24 @@
 	{
 		"keys": ["super+shift+r"],
 		"command": "foc_reload_companion"
+	},
+
+	// Submit Solution
+	{
+		"keys": ["super+enter"],
+		"command": "foc_submit_solution",
+		"context": [
+			{
+				"operand": "source.TestSyntax",
+				"operator": "not_equal",
+				"match_all": true,
+				"key": "selector"
+			},
+			{
+				"key": "setting.foc_test_edit_view",
+				"operator": "equal",
+				"operand": false
+			}
+		]
 	}
 ]

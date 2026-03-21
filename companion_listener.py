@@ -12,7 +12,7 @@ from os import path
 import sublime
 import sublime_plugin
 
-from .settings import get_settings, get_tests_file_path
+from .settings import get_settings, get_meta_file_path, get_tests_file_path
 
 # --- Global variables to manage the server thread ---
 SERVER_THREAD = None
@@ -179,6 +179,16 @@ class FocParseProblemCommand(sublime_plugin.WindowCommand):
             tests_file = get_tests_file_path(file_path)
             with open(tests_file, "w", encoding="utf-8") as f:
                 f.write(sublime.encode_value(tests_to_write, True))
+
+            # Save problem metadata (URL, name, group) for the submitter
+            meta_to_write = {
+                "url": data.get("url", ""),
+                "name": data.get("name", ""),
+                "group": data.get("group", ""),
+            }
+            meta_file = get_meta_file_path(file_path)
+            with open(meta_file, "w", encoding="utf-8") as f:
+                f.write(json.dumps(meta_to_write, indent=2))
 
             source_view = self.window.open_file(file_path)
             sublime.set_timeout(lambda: self.open_test_panel(source_view), 100)
